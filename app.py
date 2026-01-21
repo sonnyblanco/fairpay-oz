@@ -39,7 +39,7 @@ Legal Disclaimer: You MUST end every single response with this text: "Disclaimer
     
     # Configure the model (Gemini 1.5 Pro is best for PDFs)
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-pro",
+        model_name="gemini-1.5-flash",
         system_instruction=system_instruction
     )
 
