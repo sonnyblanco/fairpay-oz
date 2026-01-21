@@ -34,7 +34,7 @@ def get_gemini_response(question):
     
     # Configure the model using the one we confirmed exists
     model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
+        model_name="gemini-1.5-flash",
         system_instruction=system_instruction
     )
 
