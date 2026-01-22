@@ -1,12 +1,12 @@
 import streamlit as st
 import google.generativeai as genai
-from github import Github # This is the library to talk to GitHub
+from github import Github
 import os
 
 # 1. Configuration
 st.set_page_config(page_title="FairPay Oz", page_icon="🦘")
-st.title("🦘 FairPay Oz: AI Wage Checker")
-st.markdown("### The AI Assistant for Aussie Tradies")
+st.title("🦘 FairPay Oz: AI Wage Assistant")
+st.markdown("### The Chatbot for Aussie Tradies")
 st.info("DISCLAIMER: This is an AI Prototype. NOT legal advice. Always check the official Fair Work Pay Guide.")
 
 # 2. Setup Google Gemini API
@@ -30,12 +30,11 @@ with st.sidebar:
         if uploaded_new_pdf is not None:
             if st.button("Upload & Update AI"):
                 try:
-                    # STEP 1: Save it LOCALLY (Immediate fix)
-                    # This forces the current running app to see the new file right now.
+                    # STEP 1: Save it LOCALLY
                     with open("payguide.pdf", "wb") as f:
                         f.write(uploaded_new_pdf.getvalue())
                     
-                    # STEP 2: Save it to GITHUB (Long-term backup)
+                    # STEP 2: Save it to GITHUB
                     g = Github(st.secrets["GITHUB_TOKEN"])
                     user = g.get_user()
                     # Change 'fairpay-oz' if your repo name is different
@@ -50,15 +49,19 @@ with st.sidebar:
                     )
                     
                     st.success("✅ Updated Locally AND on GitHub!")
-                    st.warning("Please click 'Clear Cache' below to force the AI to read the new file.")
+                    st.warning("Please click 'Clear Cache' below.")
                     
                 except Exception as e:
                     st.error(f"Update Failed: {e}")
 
-            # Button to clear cache manually (Safe way to reboot AI brain)
             if st.button("Clear AI Cache & Reload"):
                 st.cache_resource.clear()
                 st.rerun()
+    
+    st.divider()
+    if st.button("🗑️ Clear Chat History"):
+        st.session_state.messages = []
+        st.rerun()
 
 # ---------------------------------------------------------
 # MAIN APP LOGIC
@@ -68,53 +71,69 @@ with st.sidebar:
 @st.cache_resource
 def get_model():
     try:
-        # Upload the PDF file
-        # Note: We read the file from the local disk (which Streamlit pulled from GitHub)
         sample_file = genai.upload_file(path="payguide.pdf", display_name="Pay Guide")
     except Exception as e:
         st.error(f"Error reading PDF: {e}. Is 'payguide.pdf' in the repo?")
         return None, None
 
-    # System Instructions
     system_instruction = """
-    Role: You are "FairPay Oz," an automated wage assistant for Australian small business owners.
-    Context: You have been provided with the official Fair Work Ombudsman Pay Guide in PDF format.
-    Your Goal: Answer user questions about hourly rates, overtime, and allowances accurately based ONLY on the provided PDF.
-    
+    Role: You are "FairPay Oz," an automated wage assistant.
+    Context: You use the provided Pay Guide PDF.
     Strict Rules:
-    1. Source of Truth: You must ONLY answer using the data in the uploaded PDF. If the user asks something not in the PDF, politely refuse.
-    2. No Guessing: If the text in the PDF is blurry or the answer isn't there, say: "I cannot find that specific rate in this Pay Guide."
-    3. Format: When giving a wage rate, you must state:
-       - The Classification (e.g., "Electrical Worker Grade 1")
-       - The Status (e.g., "Full-time" or "Casual")
-       - The Rate (e.g., "$32.40 per hour")
-    4. Legal Disclaimer: You MUST end every single response with this text: "Disclaimer: I am an AI prototype. This is not legal advice. Always cross-check with the official Pay Guide."
+    1. Answer ONLY using the PDF data.
+    2. Format wages clearly (Classification, Status, Rate).
+    3. If asked to calculate totals (e.g., "What is the total for 8 hours?"), perform the math step-by-step using the rate found in the PDF.
+    4. End with: "Disclaimer: Prototype only. Check Fair Work website."
     """
     
-    # Configure the model
     model = genai.GenerativeModel(
         model_name="gemini-flash-latest",
         system_instruction=system_instruction
     )
     return model, sample_file
 
-# Initialize
 try:
     model, sample_file = get_model()
 except:
     st.stop()
 
-# 4. User Interface
-user_question = st.text_input("Ask a question (e.g., 'Overtime rate for Grade 1?'):")
+# 4. The Chat Interface (New!)
 
-if st.button("Check Rate"):
-    if user_question and model:
-        with st.spinner("Analyzing Pay Guide PDF..."):
+# Initialize chat history if it doesn't exist
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Display previous messages
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# Handle new user input
+if prompt := st.chat_input("Ask a question (e.g., 'Grade 1 rate?')..."):
+    # 1. Display User Message
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    # Add to history
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    # 2. Get AI Response
+    with st.chat_message("assistant"):
+        with st.spinner("Analyzing Pay Guide..."):
             try:
-                response = model.generate_content([sample_file, user_question])
-                st.success("Analysis Complete")
-                st.write(response.text)
+                # Construct the conversation history to send to Gemini
+                # This allows the AI to remember the previous context
+                history_context = "History of conversation:\n"
+                for msg in st.session_state.messages:
+                    history_context += f"{msg['role'].upper()}: {msg['content']}\n"
+                
+                # Send the PDF + History + New Question
+                response = model.generate_content([sample_file, history_context, prompt])
+                
+                # Display AI Message
+                st.markdown(response.text)
+                
+                # Add to history
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+                
             except Exception as e:
                 st.error(f"Error: {e}")
-    else:
-        st.warning("Please enter a question first.")
