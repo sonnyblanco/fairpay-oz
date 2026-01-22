@@ -30,19 +30,18 @@ with st.sidebar:
         if uploaded_new_pdf is not None:
             if st.button("Upload & Update AI"):
                 try:
-                    # Connect to GitHub
-                    g = Github(st.secrets["GITHUB_TOKEN"])
-                    # Get the Repo (Change 'yourusername/fairpay-oz' to YOUR actual repo path if needed, 
-                    # but usually get_user().get_repo works if you own it)
-                    # NOTE: You might need to hardcode the repo name if the automatic detection fails.
-                    # Let's assume the repo name is 'fairpay-oz'
-                    user = g.get_user()
-                    repo = user.get_repo("fairpay-oz")
+                    # STEP 1: Save it LOCALLY (Immediate fix)
+                    # This forces the current running app to see the new file right now.
+                    with open("payguide.pdf", "wb") as f:
+                        f.write(uploaded_new_pdf.getvalue())
                     
-                    # Get the existing file to update it
+                    # STEP 2: Save it to GITHUB (Long-term backup)
+                    g = Github(st.secrets["GITHUB_TOKEN"])
+                    user = g.get_user()
+                    # Change 'fairpay-oz' if your repo name is different
+                    repo = user.get_repo("fairpay-oz") 
                     contents = repo.get_contents("payguide.pdf")
                     
-                    # Update the file on GitHub
                     repo.update_file(
                         path=contents.path,
                         message="Admin updated Pay Guide via App",
@@ -50,14 +49,16 @@ with st.sidebar:
                         sha=contents.sha
                     )
                     
-                    st.success("✅ GitHub Updated! Rebooting app to refresh AI...")
-                    # Clear the cache so the AI re-reads the new file
-                    st.cache_resource.clear()
-                    st.rerun()
+                    st.success("✅ Updated Locally AND on GitHub!")
+                    st.warning("Please click 'Clear Cache' below to force the AI to read the new file.")
                     
                 except Exception as e:
                     st.error(f"Update Failed: {e}")
-                    st.warning("Make sure your Repo Name is exactly 'fairpay-oz' and your Token has 'repo' permissions.")
+
+            # Button to clear cache manually (Safe way to reboot AI brain)
+            if st.button("Clear AI Cache & Reload"):
+                st.cache_resource.clear()
+                st.rerun()
 
 # ---------------------------------------------------------
 # MAIN APP LOGIC
