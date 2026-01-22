@@ -17,51 +17,54 @@ except:
     st.stop()
 
 # ---------------------------------------------------------
-# ADMIN SECTION: Handle File Updates
+# SIDEBAR: Navigation & Admin
 # ---------------------------------------------------------
 with st.sidebar:
-    st.header("🔒 Admin Access")
-    admin_pass = st.text_input("Enter Password", type="password")
+    # THE NEW BUTTON (Top of Sidebar)
+    if st.button("➕ Start New Chat", type="primary", use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()
     
-    if admin_pass == st.secrets["ADMIN_PASSWORD"]:
-        st.success("Logged In")
-        uploaded_new_pdf = st.file_uploader("Update Pay Guide PDF", type="pdf")
+    st.divider()
+
+    # ADMIN SECTION (Hidden inside a dropdown to keep UI clean)
+    with st.expander("🔒 Admin Access"):
+        admin_pass = st.text_input("Enter Password", type="password")
         
-        if uploaded_new_pdf is not None:
-            if st.button("Upload & Update AI"):
-                try:
-                    # STEP 1: Save it LOCALLY
-                    with open("payguide.pdf", "wb") as f:
-                        f.write(uploaded_new_pdf.getvalue())
-                    
-                    # STEP 2: Save it to GITHUB
-                    g = Github(st.secrets["GITHUB_TOKEN"])
-                    user = g.get_user()
-                    # Change 'fairpay-oz' if your repo name is different
-                    repo = user.get_repo("fairpay-oz") 
-                    contents = repo.get_contents("payguide.pdf")
-                    
-                    repo.update_file(
-                        path=contents.path,
-                        message="Admin updated Pay Guide via App",
-                        content=uploaded_new_pdf.getvalue(),
-                        sha=contents.sha
-                    )
-                    
-                    st.success("✅ Updated Locally AND on GitHub!")
-                    st.warning("Please click 'Clear Cache' below.")
-                    
-                except Exception as e:
-                    st.error(f"Update Failed: {e}")
+        if admin_pass == st.secrets["ADMIN_PASSWORD"]:
+            st.success("Logged In")
+            uploaded_new_pdf = st.file_uploader("Update Pay Guide PDF", type="pdf")
+            
+            if uploaded_new_pdf is not None:
+                if st.button("Upload & Update AI"):
+                    try:
+                        # STEP 1: Save it LOCALLY
+                        with open("payguide.pdf", "wb") as f:
+                            f.write(uploaded_new_pdf.getvalue())
+                        
+                        # STEP 2: Save it to GITHUB
+                        g = Github(st.secrets["GITHUB_TOKEN"])
+                        user = g.get_user()
+                        # Change 'fairpay-oz' to your repo name if needed
+                        repo = user.get_repo("fairpay-oz") 
+                        contents = repo.get_contents("payguide.pdf")
+                        
+                        repo.update_file(
+                            path=contents.path,
+                            message="Admin updated Pay Guide via App",
+                            content=uploaded_new_pdf.getvalue(),
+                            sha=contents.sha
+                        )
+                        
+                        st.success("✅ Updated Locally AND on GitHub!")
+                        st.warning("Please click 'Clear Cache' below.")
+                        
+                    except Exception as e:
+                        st.error(f"Update Failed: {e}")
 
             if st.button("Clear AI Cache & Reload"):
                 st.cache_resource.clear()
                 st.rerun()
-    
-    st.divider()
-    if st.button("🗑️ Clear Chat History"):
-        st.session_state.messages = []
-        st.rerun()
 
 # ---------------------------------------------------------
 # MAIN APP LOGIC
@@ -97,7 +100,7 @@ try:
 except:
     st.stop()
 
-# 4. The Chat Interface (New!)
+# 4. The Chat Interface
 
 # Initialize chat history if it doesn't exist
 if "messages" not in st.session_state:
@@ -120,13 +123,12 @@ if prompt := st.chat_input("Ask a question (e.g., 'Grade 1 rate?')..."):
     with st.chat_message("assistant"):
         with st.spinner("Analyzing Pay Guide..."):
             try:
-                # Construct the conversation history to send to Gemini
-                # This allows the AI to remember the previous context
+                # Construct conversation history
                 history_context = "History of conversation:\n"
                 for msg in st.session_state.messages:
                     history_context += f"{msg['role'].upper()}: {msg['content']}\n"
                 
-                # Send the PDF + History + New Question
+                # Send to AI
                 response = model.generate_content([sample_file, history_context, prompt])
                 
                 # Display AI Message
