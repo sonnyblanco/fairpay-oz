@@ -1,5 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
+from github import Github # This is the library to talk to GitHub
 import os
 
 # 1. Configuration
@@ -15,27 +16,72 @@ except:
     st.error("API Key not found. Please set it in Streamlit Secrets.")
     st.stop()
 
-# 3. The "Brain" Logic (Now with Caching!)
+# ---------------------------------------------------------
+# ADMIN SECTION: Handle File Updates
+# ---------------------------------------------------------
+with st.sidebar:
+    st.header("🔒 Admin Access")
+    admin_pass = st.text_input("Enter Password", type="password")
+    
+    if admin_pass == st.secrets["ADMIN_PASSWORD"]:
+        st.success("Logged In")
+        uploaded_new_pdf = st.file_uploader("Update Pay Guide PDF", type="pdf")
+        
+        if uploaded_new_pdf is not None:
+            if st.button("Upload & Update AI"):
+                try:
+                    # Connect to GitHub
+                    g = Github(st.secrets["GITHUB_TOKEN"])
+                    # Get the Repo (Change 'yourusername/fairpay-oz' to YOUR actual repo path if needed, 
+                    # but usually get_user().get_repo works if you own it)
+                    # NOTE: You might need to hardcode the repo name if the automatic detection fails.
+                    # Let's assume the repo name is 'fairpay-oz'
+                    user = g.get_user()
+                    repo = user.get_repo("fairpay-oz")
+                    
+                    # Get the existing file to update it
+                    contents = repo.get_contents("payguide.pdf")
+                    
+                    # Update the file on GitHub
+                    repo.update_file(
+                        path=contents.path,
+                        message="Admin updated Pay Guide via App",
+                        content=uploaded_new_pdf.getvalue(),
+                        sha=contents.sha
+                    )
+                    
+                    st.success("✅ GitHub Updated! Rebooting app to refresh AI...")
+                    # Clear the cache so the AI re-reads the new file
+                    st.cache_resource.clear()
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Update Failed: {e}")
+                    st.warning("Make sure your Repo Name is exactly 'fairpay-oz' and your Token has 'repo' permissions.")
+
+# ---------------------------------------------------------
+# MAIN APP LOGIC
+# ---------------------------------------------------------
+
+# 3. The "Brain" Logic (Cached)
 @st.cache_resource
 def get_model():
-    # This function runs ONLY ONCE. It uploads the file and keeps the model ready.
     try:
         # Upload the PDF file
-        # Note: Ensure 'payguide.pdf' exists in your GitHub repo
+        # Note: We read the file from the local disk (which Streamlit pulled from GitHub)
         sample_file = genai.upload_file(path="payguide.pdf", display_name="Pay Guide")
-        print(f"Uploaded file: {sample_file.name}")
     except Exception as e:
-        st.error(f"Error reading PDF: {e}. Did you upload 'payguide.pdf' to GitHub?")
-        return None
+        st.error(f"Error reading PDF: {e}. Is 'payguide.pdf' in the repo?")
+        return None, None
 
-    # Your NEW System Instructions
+    # System Instructions
     system_instruction = """
     Role: You are "FairPay Oz," an automated wage assistant for Australian small business owners.
     Context: You have been provided with the official Fair Work Ombudsman Pay Guide in PDF format.
     Your Goal: Answer user questions about hourly rates, overtime, and allowances accurately based ONLY on the provided PDF.
     
     Strict Rules:
-    1. Source of Truth: You must ONLY answer using the data in the uploaded PDF. If the user asks something not in the PDF (like "How do I fix a toilet?"), politely refuse.
+    1. Source of Truth: You must ONLY answer using the data in the uploaded PDF. If the user asks something not in the PDF, politely refuse.
     2. No Guessing: If the text in the PDF is blurry or the answer isn't there, say: "I cannot find that specific rate in this Pay Guide."
     3. Format: When giving a wage rate, you must state:
        - The Classification (e.g., "Electrical Worker Grade 1")
@@ -44,27 +90,26 @@ def get_model():
     4. Legal Disclaimer: You MUST end every single response with this text: "Disclaimer: I am an AI prototype. This is not legal advice. Always cross-check with the official Pay Guide."
     """
     
-    # Configure the model using the working alias
+    # Configure the model
     model = genai.GenerativeModel(
         model_name="gemini-flash-latest",
         system_instruction=system_instruction
     )
     return model, sample_file
 
-# Initialize the model (This will be fast thanks to caching)
+# Initialize
 try:
     model, sample_file = get_model()
 except:
     st.stop()
 
-# 4. The User Interface
+# 4. User Interface
 user_question = st.text_input("Ask a question (e.g., 'Overtime rate for Grade 1?'):")
 
 if st.button("Check Rate"):
     if user_question and model:
         with st.spinner("Analyzing Pay Guide PDF..."):
             try:
-                # Ask the question
                 response = model.generate_content([sample_file, user_question])
                 st.success("Analysis Complete")
                 st.write(response.text)
